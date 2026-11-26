@@ -1,0 +1,34 @@
+{
+  "format": 2,
+  "id": "weapon-roulette",
+  "name": "Weapon Roulette",
+  "version": "0.1.0",
+  "author": "DrLegitamate",
+  "description": "Going Commando picks Ratchet's weapon for you: every few seconds of play, or every few enemy kills, a random weapon he owns goes in his hand. Upgrades, experience, ammo and Mega versions are left exactly as they are, and you can still switch weapons yourself between rotations.",
+  "license": "MIT",
+  "homepage": "https://github.com/DrLegitamate/RAC2-Weapon-Roulette",
+  "api": "1.21",
+  "multiplayer": "solo",
+  "games": { "rac2": ["ntsc", "pal", "ntsc2"] },
+  "hooks": ["rac2.moby.record_death"],
+  "settings": [
+    { "key": "enabled", "name": "Enable Weapon Roulette", "type": "bool", "default": true,
+      "description": "Off: the mod does nothing and Ratchet keeps the weapons you choose." },
+    { "key": "rotation_mode", "name": "Rotation Mode", "type": "choice", "default": "time",
+      "choices": [
+        { "value": "time", "name": "Time Based" },
+        { "value": "kills", "name": "Enemy Kills" }
+      ],
+      "description": "What brings the next weapon: seconds of play, or enemies defeated." },
+    { "key": "interval_seconds", "name": "Time Interval (Seconds)", "type": "int", "default": 30,
+      "min": 1, "max": 3600,
+      "description": "Time Based: seconds of play between rotations. Menus, vendors, cutscenes and loading do not count." },
+    { "key": "kills_per_rotation", "name": "Enemy Kills Per Rotation", "type": "int", "default": 3,
+      "min": 1, "max": 1000,
+      "description": "Enemy Kills: enemies defeated between rotations. Crates and scripted deaths do not count." },
+    { "key": "avoid_repeats", "name": "Avoid Consecutive Repeats", "type": "bool", "default": true,
+      "description": "Never give the same weapon twice in a row while you own another one." },
+    { "key": "show_notifications", "name": "Show Notifications", "type": "bool", "default": true,
+      "description": "Show the new weapon's name, the kill count and the last seconds before a rotation in the HUD." }
+  ]
+}
