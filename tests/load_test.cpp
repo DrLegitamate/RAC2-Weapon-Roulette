@@ -89,6 +89,7 @@ struct Host {
     std::uint32_t loads = 1;
     int hand = 30;  // The item in Ratchet's hand.
     bool equip_refuses = false;
+    bool equip_ignored = false;  // Accepted, but never carried out (the hand stays as it was).
 
     std::map<std::string, bool> bools;
     std::map<std::string, std::int64_t> ints;
@@ -228,13 +229,16 @@ int host_hud_text_set(openrac_mod*, const openrac_hud_text* lines, int count) {
     return g.phase == OPENRAC_PLAY_LOADING ? OPENRAC_HOOK_UNKNOWN : OPENRAC_HOOK_OK;
 }
 
-// The game's Item_Equip, as the hook point's entry: the request is carried out at once here.
+// The game's Item_Equip, as the hook point's entry: the request is carried out at once here
+// (the game carries it out in the hero's next update, so the mod sees it a tick later either way).
 std::int32_t fake_equip(std::int32_t id) {
     g.equips.push_back(id);
     if (g.equip_refuses) {
         return 0;
     }
-    g.hand = id;
+    if (!g.equip_ignored) {
+        g.hand = id;
+    }
     return 1;
 }
 
@@ -346,10 +350,15 @@ void test_time_rotation_on_each_disc() {
         ticks(1);
         CHECK(g.equips == std::vector<int>{42});
         CHECK(g.hand == 42);
+        // Announced once the weapon is seen in his hand, the next tick.
+        for (const auto& line : last_hud()) {
+            CHECK(line.find("ROTATED") == std::string::npos);
+        }
+        ticks(1);
         CHECK((last_hud() == std::vector<std::string>{"WEAPON ROTATED: GRAVITY BOMB"}));
 
-        // And again two seconds later: back to the Lancer (the only other one).
-        ticks(2 * disc.rate);
+        // And again two seconds after the first: back to the Lancer (the only other one).
+        ticks(2 * disc.rate - 1);
         CHECK((g.equips == std::vector<int>{42, 30}));
     }
 }
@@ -442,7 +451,7 @@ void test_kill_rotation() {
     CHECK(g.equips.empty());
 
     g.death(0x00400400u, 0, 3);
-    ticks(1);
+    ticks(2);
     CHECK(g.equips == std::vector<int>{42});
     CHECK((last_hud() == std::vector<std::string>{"WEAPON ROTATED: GRAVITY BOMB",
                                                     "WEAPON ROTATION: 0 / 2 KILLS"}));
@@ -495,10 +504,16 @@ void test_single_weapon_kept_and_none_owned() {
     ticks(60 * 5);
     CHECK(g.equips.empty());
 
-    // A weapon bought meanwhile joins at the next rotation.
+    // The Bouncer is given and put in his hand; still the only weapon: kept.
     own(37);
+    g.hand = 37;
+    ticks(60 * 2);
+    CHECK(g.equips.empty());
+
+    // A weapon bought meanwhile joins at the next rotation.
+    own(30);
     ticks(60);
-    CHECK(g.equips == std::vector<int>{37});
+    CHECK(g.equips == std::vector<int>{30});
 }
 
 void test_refused_equip_is_retried_then_skipped() {
@@ -512,12 +527,125 @@ void test_refused_equip_is_retried_then_skipped() {
     CHECK(g.equips.size() == 1);
     ticks(59);
     CHECK(g.equips.size() == 60);  // Retried each tick for a second...
+    for (int id : g.equips) {
+        CHECK(id == g.equips[0]);  // ...with the weapon the rotation chose.
+    }
     ticks(10);
     CHECK(g.equips.size() == 60);  // ...then given up until the next rotation,
     ticks(49);
     CHECK(g.equips.size() == 60);
     ticks(1);                      // a full interval after it was given up.
     CHECK(g.equips.size() == 61);
+}
+
+void test_refused_equip_retry_is_a_second_on_pal() {
+    reset_host(kPal);
+    g.ints["interval_seconds"] = 1;
+    own(30);
+    own(42);
+    g.equip_refuses = true;
+    CHECK(load() == 0);
+    ticks(50 + 49);
+    CHECK(g.equips.size() == 50);
+    ticks(10);
+    CHECK(g.equips.size() == 50);
+}
+
+void test_gadget_in_hand_holds_the_rotation() {
+    reset_host(kNtsc);
+    g.ints["interval_seconds"] = 1;
+    own(30);
+    own(42);
+    own(21);
+    g.hand = 21;  // The Glider, mid-flight.
+    CHECK(load() == 0);
+    ticks(60 * 10);
+    CHECK(g.equips.empty());
+    g.hand = 13;  // The Swingshot.
+    ticks(60);
+    CHECK(g.equips.empty());
+    g.hand = 30;  // Back on his feet with the Lancer: the due rotation happens at once.
+    ticks(1);
+    CHECK(g.equips == std::vector<int>{42});
+}
+
+void test_unknown_hand_holds_the_rotation() {
+    reset_host(kNtsc);
+    g.ints["interval_seconds"] = 1;
+    own(30);
+    g.hand = -1;  // The wrench out: the port names no hand item.
+    CHECK(load() == 0);
+    ticks(60 * 10);
+    CHECK(g.equips.empty());
+    for (const auto& lines : g.huds) {
+        for (const auto& line : lines) {
+            CHECK(line.find("ROTATED") == std::string::npos);  // Nothing announced either.
+        }
+    }
+    // Two weapons and still no hand item: held all the same.
+    own(42);
+    ticks(60);
+    CHECK(g.equips.empty());
+    g.hand = 42;
+    ticks(1);
+    CHECK(g.equips == std::vector<int>{30});
+}
+
+void test_unfulfilled_equip_is_not_announced() {
+    reset_host(kNtsc);
+    g.ints["interval_seconds"] = 1;
+    own(30);
+    own(42);
+    g.equip_ignored = true;
+    CHECK(load() == 0);
+    ticks(60 + 40);
+    CHECK(g.equips == std::vector<int>{42});
+    for (const auto& lines : g.huds) {
+        for (const auto& line : lines) {
+            CHECK(line.find("ROTATED") == std::string::npos);
+        }
+    }
+    // Never received, so not a "repeat": the next rotation may offer it again.
+    g.equip_ignored = false;
+    ticks(20);
+    CHECK((g.equips == std::vector<int>{42, 42}));
+}
+
+void test_reenabling_starts_a_fresh_count() {
+    reset_host(kNtsc);
+    g.ints["interval_seconds"] = 2;
+    own(30);
+    own(42);
+    CHECK(load() == 0);
+    ticks(119);
+    g.bools["enabled"] = false;
+    for (auto& [fn, user] : g.settings_changed) {
+        fn(user);
+    }
+    ticks(600);
+    g.bools["enabled"] = true;
+    for (auto& [fn, user] : g.settings_changed) {
+        fn(user);
+    }
+    ticks(119);
+    CHECK(g.equips.empty());
+    ticks(1);
+    CHECK(g.equips.size() == 1);
+}
+
+void test_notice_waits_out_a_pause() {
+    reset_host(kNtsc);
+    g.ints["interval_seconds"] = 1;
+    own(30);
+    own(42);
+    CHECK(load() == 0);
+    ticks(61);  // Rotated and announced.
+    CHECK((last_hud() == std::vector<std::string>{"WEAPON ROTATED: GRAVITY BOMB"}));
+    g.phase = OPENRAC_PLAY_MENU;  // Paused straight away.
+    ticks(600);
+    g.phase = OPENRAC_PLAY_PLAYING;
+    ticks(1);
+    CHECK((last_hud() == std::vector<std::string>{"WEAPON ROTATED: GRAVITY BOMB"}));
 }
 
 void test_notifications_off() {
@@ -635,6 +763,12 @@ int main(int argc, char** argv) {
         {"level_change_resets_kills", test_level_change_resets_kills},
         {"single_weapon_kept_and_none_owned", test_single_weapon_kept_and_none_owned},
         {"refused_equip_is_retried_then_skipped", test_refused_equip_is_retried_then_skipped},
+        {"refused_equip_retry_is_a_second_on_pal", test_refused_equip_retry_is_a_second_on_pal},
+        {"gadget_in_hand_holds_the_rotation", test_gadget_in_hand_holds_the_rotation},
+        {"unknown_hand_holds_the_rotation", test_unknown_hand_holds_the_rotation},
+        {"unfulfilled_equip_is_not_announced", test_unfulfilled_equip_is_not_announced},
+        {"reenabling_starts_a_fresh_count", test_reenabling_starts_a_fresh_count},
+        {"notice_waits_out_a_pause", test_notice_waits_out_a_pause},
         {"notifications_off", test_notifications_off},
         {"disabled_does_nothing", test_disabled_does_nothing},
         {"settings_changed_while_running", test_settings_changed_while_running},

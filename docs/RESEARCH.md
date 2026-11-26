@@ -114,9 +114,17 @@ How the mod uses it:
   running.
 - **Only owned, holdable weapons.** The game "never puts an item not owned in
   his hand" (item randomizer's `rac2.c`), and the mod only offers owned ones.
-- **Refusals.** If the call returns 0 the mod tries again each tick for a
-  second, then gives that rotation up. If an accepted request has not reached
-  the hand within half a second the mod logs it, for in-game testing.
+- **Refusals.** If the call returns 0 the mod tries the same weapon again each
+  tick for a second (60 ticks on NTSC-U, 50 on PAL), then gives that rotation
+  up.
+- **Announced on arrival.** A return of 1 only means a request was queued. The
+  notice, and the "previous pick" used to avoid repeats, wait until the weapon
+  is seen in the hand; if it has not arrived within half a second the mod logs
+  it and announces nothing.
+- **Never over a gadget.** A rotation that falls due while the hand holds a
+  gadget (which the game put there and will take away itself), or while
+  `hero_held` names no item (the wrench out), waits until a roulette weapon is
+  in hand. Taking a Glider or Swingshot away mid-use could drop Ratchet.
 
 ### Weapons that must not be equipped
 

@@ -79,11 +79,17 @@ bought joins straight away. Never chosen:
 The weapon in Ratchet's hand is never chosen while you own another one. If you
 own only one weapon it stays in his hand; if you own none, nothing happens.
 
+**A rotation waits for a weapon in hand.** If it falls due while Ratchet is
+using a gadget (the Glider, the Swingshot and so on), has the wrench out, or
+holds anything the game can't name, the mod waits and rotates the moment a
+weapon is back in his hand. It never pulls a gadget away mid-use.
+
 ### What you see
 
 With notifications on, near the top of the screen:
 
-- `WEAPON ROTATED: PLASMA COIL` for three seconds after each rotation;
+- `WEAPON ROTATED: PLASMA COIL` for three seconds of play once the new weapon
+  is actually in Ratchet's hand (time paused in menus doesn't use it up);
 - Enemy Kills mode: `WEAPON ROTATION: 2 / 3 KILLS`, small, while you play;
 - Time Based mode: `NEXT WEAPON IN 5` ... `1` in the last five seconds.
 

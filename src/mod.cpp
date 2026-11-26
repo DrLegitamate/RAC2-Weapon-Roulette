@@ -41,11 +41,17 @@ using namespace weapon_roulette;
 using openrac::rac2::Item_Equip;
 using openrac::rac2::Moby_RecordDeath;
 
-// How many ticks a rotation retries an equip the game refused, before it gives that one up.
-constexpr int kEquipRetryTicks = 60;
-// How many ticks the mod waits for an accepted equip to show in the hand before it logs that it
-// did not (a diagnostic for in-game testing; nothing else depends on it).
-constexpr int kEquipConfirmTicks = 30;
+// How long a rotation retries an equip the game refused, before it gives that one up: one second,
+// in the disc's ticks.
+int equip_retry_ticks(const Disc& disc) {
+    return disc.ticks_per_second;
+}
+
+// How long the mod waits for an accepted equip to reach the hand: half a second, in the disc's
+// ticks. The rotation is announced once it does; if it never does, it is logged and not announced.
+int equip_confirm_ticks(const Disc& disc) {
+    return disc.ticks_per_second / 2;
+}
 
 // The mod's state. One, made at load; the game's thread is the only one that uses it.
 class Roulette {
@@ -58,7 +64,13 @@ public:
 
     // Reads the settings; a changed rotation setting starts the count again.
     void read_settings() {
+        const bool was_enabled = m_enabled;
         m_enabled = m_mod.setting<bool>("enabled");
+        if (m_configured && m_enabled != was_enabled) {
+            // Switched off or on while the game runs: what was counted before does not carry over.
+            m_clock.rotated();
+            clear_pending();
+        }
         m_avoid_repeats = m_mod.setting<bool>("avoid_repeats");
         m_notify = m_mod.setting<bool>("show_notifications");
 
@@ -105,11 +117,17 @@ public:
 
         const bool play = m_enabled && in_play(status);
         m_clock.tick(play, status.loads);
-        m_feedback.tick();
         if (play) {
+            // The notice's time runs only while the HUD can show it.
+            m_feedback.tick();
             confirm_equip();
             if (m_clock.due()) {
-                rotate();
+                const int hand = in_hand();
+                if (is_roulette_weapon(hand)) {
+                    rotate(hand);
+                } else {
+                    hold(hand);
+                }
             }
         }
         show(play);
@@ -124,8 +142,26 @@ private:
         m_kills.reset();
         m_feedback.clear();
         m_shown_valid = false;  // The HUD's lines went with the level.
+        clear_pending();
+    }
+
+    // Forgets a rotation under way: its retries, its chosen weapon, its awaited confirmation.
+    void clear_pending() {
         m_retry_ticks = 0;
+        m_pending_pick = -1;
         m_expected = -1;
+        m_held_logged = -2;
+    }
+
+    // A rotation is due but Ratchet's hand holds no roulette weapon: a gadget in use (the Glider,
+    // the Swingshot...), which the game put there and will take out itself, or nothing the port can
+    // name (the wrench out, the hand between items). Taking it out could drop him mid-glide or
+    // mid-swing, so the rotation waits, due, until a weapon is back in his hand.
+    void hold(int hand) {
+        if (hand != m_held_logged) {
+            m_held_logged = hand;
+            m_mod.debug("rotation held: item " + std::to_string(hand) + " in hand");
+        }
     }
 
     // Whether the player is in control of Ratchet: a level in play (no menu, vendor, scene or
@@ -187,58 +223,65 @@ private:
         return held.pieces[0].item;
     }
 
-    // Puts the next weapon in Ratchet's hand.
-    void rotate() {
-        const int current = in_hand();
-        Choice choice;
-        choice.pool = owned_weapons([this](int id) { return owned(id); });
-        choice.current = current;
-        choice.previous_pick = m_previous_pick;
-        choice.avoid_repeats = m_avoid_repeats;
+    // Puts the next weapon in Ratchet's hand; `current` is the roulette weapon he holds now.
+    void rotate(int current) {
+        m_held_logged = -2;
 
-        const auto next = choose_weapon(choice, [this](std::size_t n) {
-            return std::uniform_int_distribution<std::size_t>(0, n - 1)(m_rng);
-        });
+        // A retry keeps the weapon its rotation chose, while it is still owned and not in hand.
+        int next = m_pending_pick;
+        if (next < 0 || next == current || !owned(next)) {
+            Choice choice;
+            choice.pool = owned_weapons([this](int id) { return owned(id); });
+            choice.current = current;
+            choice.previous_pick = m_previous_pick;
+            choice.avoid_repeats = m_avoid_repeats;
+            const auto chosen = choose_weapon(choice, [this](std::size_t n) {
+                return std::uniform_int_distribution<std::size_t>(0, n - 1)(m_rng);
+            });
+            next = chosen ? *chosen : -1;
+        }
 
-        // Nothing to change to: no weapon owned yet, or only the one in hand. Keep it.
-        if (!next || *next == current) {
-            m_mod.debug(next ? "rotation: one weapon owned, kept" : "rotation: no weapon owned");
+        // Nothing to change to: only the one in hand is owned. Keep it.
+        if (next < 0 || next == current) {
+            m_mod.debug("rotation: one weapon owned, kept");
             m_clock.rotated();
-            m_retry_ticks = 0;
+            clear_pending();
             return;
         }
 
-        if (m_equip(*next) != 0) {
-            m_previous_pick = *next;
-            m_expected = *next;
-            m_expected_ticks = kEquipConfirmTicks;
-            m_feedback.announce(weapon_name(*next), m_disc.ticks_per_second);
-            m_mod.debug("rotation: item " + std::to_string(*next) + " (was "
+        if (m_equip(next) != 0) {
+            // Asked for: announced once it is in his hand (confirm_equip).
+            m_mod.debug("rotation: item " + std::to_string(next) + " asked for (was "
                         + std::to_string(current) + ")");
             m_clock.rotated();
-            m_retry_ticks = 0;
+            clear_pending();
+            m_expected = next;
+            m_expected_ticks = equip_confirm_ticks(m_disc);
             return;
         }
 
-        // Refused: try again next tick, a while, then give this rotation up.
-        if (++m_retry_ticks >= kEquipRetryTicks) {
-            m_mod.warn("rotation: the game refused item " + std::to_string(*next)
+        // Refused: the same weapon again next tick, for a second, then this rotation is given up.
+        m_pending_pick = next;
+        if (++m_retry_ticks >= equip_retry_ticks(m_disc)) {
+            m_mod.warn("rotation: the game refused item " + std::to_string(next)
                        + " for a second; skipped");
             m_clock.rotated();
-            m_retry_ticks = 0;
+            clear_pending();
         }
     }
 
-    // Logs once when an accepted equip has not reached the hand in a while.
+    // Announces an asked-for weapon once it is in Ratchet's hand; logs one that never arrives.
     void confirm_equip() {
         if (m_expected < 0) {
             return;
         }
         if (in_hand() == m_expected) {
+            m_previous_pick = m_expected;
+            m_feedback.announce(weapon_name(m_expected), m_disc.ticks_per_second);
             m_expected = -1;
         } else if (--m_expected_ticks <= 0) {
             m_mod.warn("rotation: item " + std::to_string(m_expected)
-                       + " was asked for but is not in hand");
+                       + " was asked for but never reached the hand; not announced");
             m_expected = -1;
         }
     }
@@ -304,8 +347,10 @@ private:
 
     int m_previous_pick = -1;    // The roulette's last weapon.
     int m_retry_ticks = 0;       // Ticks the current rotation's equip has been refused.
+    int m_pending_pick = -1;     // The weapon a refused rotation retries.
     int m_expected = -1;         // An equip asked for, not yet seen in hand.
     int m_expected_ticks = 0;
+    int m_held_logged = -2;      // The hand item last logged as holding a rotation (-2 none).
     mutable int m_logged_class = -1;  // The last non-Ratchet hero class logged.
 
     std::vector<HudLine> m_shown;  // The lines the HUD has now.
