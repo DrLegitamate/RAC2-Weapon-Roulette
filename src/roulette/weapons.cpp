@@ -26,6 +26,12 @@ bool is_roulette_weapon(int id) {
     });
 }
 
+bool can_fire(int id, int ammo) {
+    return ammo > 0
+           || std::any_of(std::begin(kAmmoFreeWeapons), std::end(kAmmoFreeWeapons),
+                          [id](int free) { return free == id; });
+}
+
 std::string_view weapon_name(int id) {
     for (const Weapon& w : kWeapons) {
         if (w.id == id) {
@@ -56,6 +62,21 @@ std::optional<int> choose_weapon(const Choice& choice, const Pick& pick) {
     }
     if (candidates.empty()) {
         return std::nullopt;
+    }
+
+    // Weapons that can fire first: the others that can, or else the one in hand if it can.
+    if (choice.prefer_ammo && choice.loaded) {
+        std::vector<int> armed;
+        std::copy_if(candidates.begin(), candidates.end(), std::back_inserter(armed),
+                     [&](int id) { return id != choice.current && choice.loaded(id); });
+        if (!armed.empty()) {
+            candidates = armed;
+        } else if (std::find(candidates.begin(), candidates.end(), choice.current)
+                       != candidates.end()
+                   && choice.loaded(choice.current)) {
+            return choice.current;
+        }
+        // Nothing can fire: chosen as without the preference.
     }
 
     // Never the weapon in hand while there is another; then, if asked, not the last choice.

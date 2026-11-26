@@ -72,6 +72,7 @@ public:
             clear_pending();
         }
         m_avoid_repeats = m_mod.setting<bool>("avoid_repeats");
+        m_prefer_ammo = m_mod.setting<bool>("prefer_ammo");
         m_notify = m_mod.setting<bool>("show_notifications");
 
         RotationConfig config;
@@ -93,7 +94,8 @@ public:
                    + (config.mode == Mode::Kills
                           ? "every " + std::to_string(config.kills_per_rotation) + " kills"
                           : "every " + std::to_string(config.interval_seconds) + " s")
-                   + (m_avoid_repeats ? ", no repeats" : "") + (m_notify ? ", notifications" : ""));
+                   + (m_avoid_repeats ? ", no repeats" : "") + (m_prefer_ammo ? ", ammo first" : "")
+                   + (m_notify ? ", notifications" : ""));
     }
 
     // A death about to be recorded (rac2.moby.record_death, before the game's own function).
@@ -213,6 +215,16 @@ private:
                && m_mod.memory().read<std::uint8_t>(bytes + static_cast<std::uint32_t>(id)) != 0;
     }
 
+    // Whether weapon `id` can fire now: rounds left, or a weapon with no ammo.
+    bool loaded(int id) const {
+        const openrac::gaddr words = m_mod.relocate(m_disc.ammo);
+        if (words == 0 || id < 0 || id >= kItemCount) {
+            return false;
+        }
+        const auto ammo = m_mod.memory().read<std::int32_t>(words + 4u * static_cast<std::uint32_t>(id));
+        return can_fire(id, ammo);
+    }
+
     // The item in Ratchet's hand, -1 when the port cannot say.
     int in_hand() const {
         openrac_held held{};
@@ -235,15 +247,17 @@ private:
             choice.current = current;
             choice.previous_pick = m_previous_pick;
             choice.avoid_repeats = m_avoid_repeats;
+            choice.prefer_ammo = m_prefer_ammo;
+            choice.loaded = [this](int id) { return loaded(id); };
             const auto chosen = choose_weapon(choice, [this](std::size_t n) {
                 return std::uniform_int_distribution<std::size_t>(0, n - 1)(m_rng);
             });
             next = chosen ? *chosen : -1;
         }
 
-        // Nothing to change to: only the one in hand is owned. Keep it.
+        // Nothing better to change to: only the one in hand is owned, or only it has ammo. Keep it.
         if (next < 0 || next == current) {
-            m_mod.debug("rotation: one weapon owned, kept");
+            m_mod.debug("rotation: nothing else to give, kept");
             m_clock.rotated();
             clear_pending();
             return;
@@ -337,6 +351,7 @@ private:
 
     bool m_enabled = true;
     bool m_avoid_repeats = true;
+    bool m_prefer_ammo = true;
     bool m_notify = true;
     bool m_configured = false;
     RotationConfig m_config;

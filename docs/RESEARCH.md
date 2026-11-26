@@ -162,6 +162,18 @@ to 51, 54, 55), the head item 47 and the boots 52 are excluded.
 - **Item in hand**: from the SDK's `hero_held`, which on Going Commando reports
   the hand's item (`port/game/rac2/host/play.c`, hero record `+0x1248`).
 
+## Ammo
+
+- **Rounds**: `s32[56]` by item id at `0x139688` (NTSC-U v1.01 and v2.00),
+  `0x139708` (PAL). NG++, ammo-max and the difficulty mod agree; the save
+  editor names the same table (chunk 9). Read afresh at each rotation.
+- **Weapons with no ammo**: the save editor's table gives the Sheepinator (16)
+  and the Walloper (53) a capacity of 0 in every version, and
+  `rac2.weapon.take_ammo` treats a weapon with no capacity as endless. Their
+  ammo word is 0, so they are listed as always able to fire
+  (`kAmmoFreeWeapons`).
+- The preference only reads these; the mod still writes no game memory.
+
 ## Play state and time
 
 - `play_status` is implemented for Going Commando

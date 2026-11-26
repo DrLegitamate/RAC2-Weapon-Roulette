@@ -43,6 +43,7 @@ the count again.
 | Time Interval (Seconds) | whole number, 1 to 3600 | 30 | **Time Based**: seconds of play between rotations. Type any value in the box; 15, 45, 75, 120 and 180 all work. |
 | Enemy Kills Per Rotation | whole number, 1 to 1000 | 3 | **Enemy Kills**: enemies defeated between rotations. 1 rotates after every kill. |
 | Avoid Consecutive Repeats | on/off | On | Never give the same weapon twice in a row while you own another. |
+| Prefer Weapons With Ammo | on/off | On | Only hand over weapons that can fire. If nothing else has ammo, Ratchet keeps the weapon he has. Off: empty weapons can come up too. |
 | Show Notifications | on/off | On | Show the mod's lines in the HUD (below). Off: the mod shows nothing. |
 
 Both numbers stay visible and keep their values when you switch modes; only
@@ -78,6 +79,12 @@ bought joins straight away. Never chosen:
 
 The weapon in Ratchet's hand is never chosen while you own another one. If you
 own only one weapon it stays in his hand; if you own none, nothing happens.
+
+**Ammo first.** With Prefer Weapons With Ammo on (the default), the roulette
+only picks from weapons with rounds left; the Sheepinator and Walloper use no
+ammo and always qualify. If the weapon in hand is the only one that can fire,
+it stays. If nothing can fire at all, it picks as normal. Avoid Consecutive
+Repeats gives way to this: a repeat is better than an empty gun.
 
 **A rotation waits for a weapon in hand.** If it falls due while Ratchet is
 using a gadget (the Glider, the Swingshot and so on), has the wrench out, or
@@ -173,7 +180,7 @@ against another SDK (a newer release, or `sdk/` in an OpenRAC checkout), pass
 
 | Test | Covers |
 |---|---|
-| `weapons_test` | the weapon table (gadgets, never-held and Clank weapons excluded), the pool from owned bytes, single and multiple weapons, avoiding the weapon in hand and the previous pick, new weapons joining, no change to ammo, experience or versions |
+| `weapons_test` | the weapon table (gadgets, never-held and Clank weapons excluded), the pool from owned bytes, single and multiple weapons, avoiding the weapon in hand and the previous pick, new weapons joining, preferring weapons with ammo (and the ammo-free ones), no change to ammo, experience or versions |
 | `rotation_test` | rotation after exactly the interval (60 and 50 ticks a second), none before, repeats, custom intervals, pausing and resuming, level changes; kill thresholds, resets, mode switches and setting limits |
 | `kills_test` | the game's kill rule: enemies count; crates, unrewarded and scripted deaths, non-kill events, duplicates and out-of-play deaths do not; level changes forget deaths |
 | `feedback_test` | the HUD texts, the font's limits, notice timing, the countdown, notifications off |
@@ -228,8 +235,6 @@ make these checks quick to read from OpenRAC's log.
 - **"Is Ratchet the hero" is a class check** (hero moby class 0). If it turns
   out wrong on some level the roulette simply pauses there, which is safe but
   noticeable; the debug log names the class.
-- **An empty weapon can be chosen.** The roulette does not look at ammo, so it
-  can hand Ratchet a weapon with none left. You can still switch manually.
 - **Notifications are English only** and use the base weapon name (Lancer,
   not Heavy Lancer).
 - **No progress is saved.** A partially counted rotation is lost on quitting,

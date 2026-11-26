@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <set>
 #include <vector>
@@ -190,6 +191,74 @@ void test_choice_leaves_progression_alone() {
     CHECK(inv.record == before.record);
 }
 
+// A `loaded` answer from an ammo table, as the mod reads it.
+std::function<bool(int)> loaded_from(const std::array<std::int32_t, kItemCount>& ammo) {
+    return [ammo](int id) { return can_fire(id, ammo[static_cast<std::size_t>(id)]); };
+}
+
+void test_can_fire() {
+    CHECK(can_fire(30, 1));
+    CHECK(!can_fire(30, 0));
+    CHECK(!can_fire(43, -1));
+    CHECK(can_fire(16, 0));  // Sheepinator: no ammo, never empty.
+    CHECK(can_fire(53, 0));  // Walloper.
+}
+
+void test_prefers_weapons_with_ammo() {
+    std::array<std::int32_t, kItemCount> ammo{};
+    ammo[30] = 50;
+    ammo[42] = 0;   // Gravity Bomb, empty.
+    ammo[43] = 0;   // Zodiac, empty.
+    ammo[28] = 10;  // Plasma Coil.
+    Choice c;
+    c.pool = {28, 30, 42, 43};
+    c.current = 30;
+    c.loaded = loaded_from(ammo);
+    CHECK((every_choice(c) == std::set<int>{28}));
+
+    // The ammo-free weapons count as loaded.
+    c.pool = {16, 30, 42, 53};
+    CHECK((every_choice(c) == std::set<int>{16, 53}));
+
+    // Off: any of the others.
+    c.prefer_ammo = false;
+    c.pool = {28, 30, 42, 43};
+    CHECK((every_choice(c) == std::set<int>{28, 42, 43}));
+}
+
+void test_only_loaded_weapon_in_hand_is_kept() {
+    std::array<std::int32_t, kItemCount> ammo{};
+    ammo[30] = 50;
+    Choice c;
+    c.pool = {30, 42, 43};
+    c.current = 30;
+    c.loaded = loaded_from(ammo);
+    const auto w = choose_weapon(c, fixed(1));
+    CHECK(w && *w == 30);  // Kept: better than an empty Zodiac.
+}
+
+void test_nothing_loaded_falls_back() {
+    std::array<std::int32_t, kItemCount> ammo{};
+    Choice c;
+    c.pool = {30, 42, 43};
+    c.current = 30;
+    c.previous_pick = 42;
+    c.loaded = loaded_from(ammo);
+    CHECK((every_choice(c) == std::set<int>{43}));
+}
+
+void test_repeat_allowed_rather_than_empty() {
+    std::array<std::int32_t, kItemCount> ammo{};
+    ammo[42] = 3;
+    ammo[30] = 3;
+    Choice c;
+    c.pool = {30, 42, 43};
+    c.current = 30;
+    c.previous_pick = 42;  // The only other loaded weapon was the last pick.
+    c.loaded = loaded_from(ammo);
+    CHECK((every_choice(c) == std::set<int>{42}));
+}
+
 void test_bad_pick_index_is_safe() {
     Choice c;
     c.pool = {12, 30};
@@ -209,6 +278,11 @@ int main() {
     RUN(test_previous_pick_avoided);
     RUN(test_newly_acquired_weapon_enters_pool);
     RUN(test_choice_leaves_progression_alone);
+    RUN(test_can_fire);
+    RUN(test_prefers_weapons_with_ammo);
+    RUN(test_only_loaded_weapon_in_hand_is_kept);
+    RUN(test_nothing_loaded_falls_back);
+    RUN(test_repeat_allowed_rather_than_empty);
     RUN(test_bad_pick_index_is_safe);
     return 0;
 }

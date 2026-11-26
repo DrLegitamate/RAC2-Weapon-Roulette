@@ -63,8 +63,16 @@ inline constexpr Weapon kWeapons[] = {
     {53, "Walloper"},
 };
 
+// The roulette weapons with no ammo at all: every version's capacity is 0 (the save editor's
+// table), and the game's ammo take treats a weapon with no capacity as endless
+// (rac2.weapon.take_ammo). They can always be used, whatever their ammo word holds.
+inline constexpr int kAmmoFreeWeapons[] = {16, 53};  // Sheepinator, Walloper
+
 // Returns whether item `id` is one the roulette may put in Ratchet's hand.
 bool is_roulette_weapon(int id);
+
+// Returns whether weapon `id` can fire with `ammo` rounds: any round, or a weapon with no ammo.
+bool can_fire(int id, int ammo);
 
 // Returns the weapon's base name, or "" for an id that is not a roulette weapon.
 std::string_view weapon_name(int id);
@@ -80,6 +88,9 @@ struct Choice {
     int current = -1;          // The item in Ratchet's hand now, -1 when unknown.
     int previous_pick = -1;    // The roulette's last choice, -1 for none yet.
     bool avoid_repeats = true;  // The "Avoid consecutive repeats" setting.
+    bool prefer_ammo = true;    // The "Prefer weapons with ammo" setting.
+    // Whether weapon `id` can fire now (can_fire with its ammo); null: every weapon can.
+    std::function<bool(int)> loaded;
 };
 
 // Picks an index in [0, n) for n > 0: the mod's random source, a fixed one in the tests.
@@ -90,6 +101,10 @@ using Pick = std::function<std::size_t(std::size_t n)>;
 // It is never the weapon in hand while another is owned. With avoid_repeats it is not the
 // roulette's previous choice either, while another candidate remains. With one weapon owned the
 // answer is that weapon (the caller keeps it in hand and equips nothing).
+//
+// With prefer_ammo the choice is among the other weapons that can fire, while there are any. When
+// none can but the one in hand, the answer is the one in hand (kept: better than an empty one).
+// When none can at all, it is made as without prefer_ammo.
 std::optional<int> choose_weapon(const Choice& choice, const Pick& pick);
 
 }  // namespace weapon_roulette

@@ -46,6 +46,7 @@ def main() -> int:
         "interval_seconds": ("int", 30),
         "kills_per_rotation": ("int", 3),
         "avoid_repeats": ("bool", True),
+        "prefer_ammo": ("bool", True),
         "show_notifications": ("bool", True),
     }
     for key, (kind, default) in want.items():

@@ -28,6 +28,8 @@
       "description": "Enemy Kills: enemies defeated between rotations. Crates and scripted deaths do not count." },
     { "key": "avoid_repeats", "name": "Avoid Consecutive Repeats", "type": "bool", "default": true,
       "description": "Never give the same weapon twice in a row while you own another one." },
+    { "key": "prefer_ammo", "name": "Prefer Weapons With Ammo", "type": "bool", "default": true,
+      "description": "Only hand over weapons that can fire (the Sheepinator and Walloper always can). If only the weapon in hand has ammo, keep it. Off: any owned weapon, empty or not." },
     { "key": "show_notifications", "name": "Show Notifications", "type": "bool", "default": true,
       "description": "Show the new weapon's name, the kill count and the last seconds before a rotation in the HUD." }
   ]

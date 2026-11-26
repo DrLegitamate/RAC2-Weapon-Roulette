@@ -69,12 +69,13 @@ using DeathFn = void (*)(std::uint32_t, std::int32_t, std::int32_t);
 struct DiscLayout {
     const char* version;
     std::uint32_t owned;
+    std::uint32_t ammo;
     std::uint32_t hero;
     int rate;
 };
-constexpr DiscLayout kNtsc{"ntsc", 0x001A7AF8u, 0x00189E20u, 60};
-constexpr DiscLayout kPal{"pal", 0x001A7B80u, 0x00189EA0u, 50};
-constexpr DiscLayout kNtsc2{"ntsc2", 0x001A7B00u, 0x00189E20u, 60};
+constexpr DiscLayout kNtsc{"ntsc", 0x001A7AF8u, 0x00139688u, 0x00189E20u, 60};
+constexpr DiscLayout kPal{"pal", 0x001A7B80u, 0x00139708u, 0x00189EA0u, 50};
+constexpr DiscLayout kNtsc2{"ntsc2", 0x001A7B00u, 0x00139688u, 0x00189E20u, 60};
 
 constexpr std::uint32_t kHeroMobyAddress = 0x00300000u;  // Where the test puts the hero's moby.
 constexpr std::uint32_t kEnemyClassRecord = 0x00310000u;
@@ -110,7 +111,8 @@ void reset_host(const DiscLayout& disc) {
     std::fill(g_memory.begin(), g_memory.end(), 0);
     g = Host{};
     g.disc = disc;
-    g.bools = {{"enabled", true}, {"avoid_repeats", true}, {"show_notifications", true}};
+    g.bools = {{"enabled", true}, {"avoid_repeats", true}, {"prefer_ammo", true},
+               {"show_notifications", true}};
     g.ints = {{"interval_seconds", 30}, {"kills_per_rotation", 3}};
     g.strings = {{"rotation_mode", "time"}};
 
@@ -127,6 +129,10 @@ void reset_host(const DiscLayout& disc) {
 
 void own(int item, bool owned = true) {
     g_memory[g.disc.owned + static_cast<std::uint32_t>(item)] = owned ? 1 : 0;
+}
+
+void set_ammo(int item, std::int32_t rounds) {
+    std::memcpy(&g_memory[g.disc.ammo + 4u * static_cast<std::uint32_t>(item)], &rounds, 4);
 }
 
 void set_hero_class(std::uint16_t cls) {
@@ -648,6 +654,43 @@ void test_notice_waits_out_a_pause() {
     CHECK((last_hud() == std::vector<std::string>{"WEAPON ROTATED: GRAVITY BOMB"}));
 }
 
+void test_prefers_weapons_with_ammo_on_each_disc() {
+    for (const DiscLayout& disc : {kNtsc, kPal, kNtsc2}) {
+        reset_host(disc);
+        g.ints["interval_seconds"] = 1;
+        own(30);
+        own(42);
+        own(43);
+        own(28);
+        set_ammo(30, 100);
+        set_ammo(28, 5);  // Only the Plasma Coil is loaded besides the Lancer in hand.
+        CHECK(load() == 0);
+        ticks(disc.rate * 4);
+        // Lancer -> Plasma Coil -> Lancer -> Plasma Coil: never the empty Gravity Bomb or Zodiac.
+        CHECK((g.equips == std::vector<int>{28, 30, 28, 30}));
+
+        // The Plasma Coil runs dry while the Lancer is in hand: the Lancer is kept.
+        set_ammo(28, 0);
+        g.equips.clear();
+        ticks(disc.rate * 3);
+        CHECK(g.equips.empty());
+    }
+
+    // Off: the empty ones come up too.
+    reset_host(kNtsc);
+    g.ints["interval_seconds"] = 1;
+    g.bools["prefer_ammo"] = false;
+    g.bools["avoid_repeats"] = false;
+    own(30);
+    own(42);
+    own(43);
+    set_ammo(30, 100);
+    CHECK(load() == 0);
+    ticks(60 * 60);
+    CHECK(std::find(g.equips.begin(), g.equips.end(), 42) != g.equips.end()
+          || std::find(g.equips.begin(), g.equips.end(), 43) != g.equips.end());
+}
+
 void test_notifications_off() {
     reset_host(kNtsc);
     g.ints["interval_seconds"] = 1;
@@ -769,6 +812,7 @@ int main(int argc, char** argv) {
         {"unfulfilled_equip_is_not_announced", test_unfulfilled_equip_is_not_announced},
         {"reenabling_starts_a_fresh_count", test_reenabling_starts_a_fresh_count},
         {"notice_waits_out_a_pause", test_notice_waits_out_a_pause},
+        {"prefers_weapons_with_ammo_on_each_disc", test_prefers_weapons_with_ammo_on_each_disc},
         {"notifications_off", test_notifications_off},
         {"disabled_does_nothing", test_disabled_does_nothing},
         {"settings_changed_while_running", test_settings_changed_while_running},

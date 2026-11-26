@@ -8,6 +8,8 @@
 //   - owned bytes (g_inventoryOwned, D_001A7AF8 on NTSC-U v1.01): openrac-mods ng-plus-plus
 //     src/discs.h and ammo-max src/buy_all_rac2.cpp agree on all three discs; the launcher's save
 //     editor names the same table (chunk 10, 0x001A7AF8).
+//   - ammo (g_weaponAmmo, D_00139688 on NTSC-U v1.01): ng-plus-plus, ammo-max and difficulty-mod
+//     agree on all three discs; the save editor names the same table (chunk 9).
 //   - the hero record (D_00189E20) and his moby at +0x2290: ng-plus-plus src/discs.h and
 //     difficulty-mod src/rac2/discs.h.
 //   - ticks a second: OpenRAC port/game/rac2-<disc>/hostgen.json "frame_rate".
@@ -25,15 +27,16 @@ namespace weapon_roulette {
 struct Disc {
     const char* version;     // openrac_api.version.
     std::uint32_t owned;     // u8 per item id: non-zero when owned.
+    std::uint32_t ammo;      // s32 per item id: its rounds.
     std::uint32_t hero;      // The hero record.
     int ticks_per_second;    // The game's ticks a second.
 };
 
 // clang-format off
 inline constexpr Disc kDiscs[] = {
-    {"ntsc",  0x001A7AF8u, 0x00189E20u, 60},  // NTSC-U v1.01
-    {"pal",   0x001A7B80u, 0x00189EA0u, 50},  // PAL
-    {"ntsc2", 0x001A7B00u, 0x00189E20u, 60},  // NTSC-U v2.00
+    {"ntsc",  0x001A7AF8u, 0x00139688u, 0x00189E20u, 60},  // NTSC-U v1.01
+    {"pal",   0x001A7B80u, 0x00139708u, 0x00189EA0u, 50},  // PAL
+    {"ntsc2", 0x001A7B00u, 0x00139688u, 0x00189E20u, 60},  // NTSC-U v2.00
 };
 // clang-format on
 
